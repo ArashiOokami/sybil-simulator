@@ -318,7 +318,111 @@ if analyze_btn:
             st.info(f"📈 **Reputation Score**: {reputation_score*100:.0f}% - " +
                    ("Good standing. Maintain natural behavior." if reputation_score > 0.6 else
                     "Needs improvement. Focus on organic usage and wallet age."))
-            
+            # === ADD THIS SECTION ===
+
+st.subheader("🎯 What To Do Next (Action Plan)")
+
+risk_level = "HIGH" if overall > 0.6 else "MEDIUM" if overall > 0.3 else "LOW"
+
+if overall > 0.6:
+    st.error("### 🚨 Your wallets are at HIGH risk of being filtered")
+    st.markdown("""
+    **Immediate actions recommended:**
+    
+    1. **Do NOT submit these wallets** to any airdrop that filters aggressively (LayerZero, zkSync, Scroll).
+    2. **Break funding links** – Move funds to new wallets from DIFFERENT sources (not the same master wallet).
+    3. **Add noise for 2-4 weeks** – Random transactions, different times, varied amounts.
+    4. **Consider retiring obvious clusters** – Some wallets may already be flagged.
+    """)
+    
+elif overall > 0.3:
+    st.warning("### ⚠️ Your wallets show MODERATE risk – fixable")
+    st.markdown("""
+    **Recommended improvements:**
+    
+    1. **Vary transaction amounts** – Stop using fixed values like 0.01 ETH.
+    2. **Desync timing** – Space out activities across different hours/days.
+    3. **Add real usage** – Hold some tokens, interact with a new protocol.
+    4. **Wait 1-2 weeks** before submitting to filters.
+    """)
+    
+else:
+    st.success("### ✅ Your wallets look ORGANIC – low risk")
+    st.markdown("""
+    **Maintain good habits:**
+    
+    1. Keep varying your behavior.
+    2. Avoid becoming predictable.
+    3. Continue using protocols naturally.
+    """)
+
+# Decision Matrix
+st.subheader("📊 Should You Use These Wallets?")
+
+col_a, col_b, col_c = st.columns(3)
+
+with col_a:
+    st.markdown("**LayerZero / zkSync / Scroll**")
+    if overall > 0.5:
+        st.error("❌ High risk of filtering")
+    elif overall > 0.3:
+        st.warning("⚠️ Possible filtering")
+    else:
+        st.success("✅ Likely safe")
+
+with col_b:
+    st.markdown("**Smaller / New Projects**")
+    if overall > 0.7:
+        st.warning("⚠️ Moderate risk")
+    else:
+        st.success("✅ Likely safe")
+
+with col_c:
+    st.markdown("**Open / Unfiltered Airdrops**")
+    st.success("✅ Probably safe for most")
+
+# Specific fixes by criterion
+st.subheader("🔧 Specific Fixes for Your Detected Issues")
+
+fixes = []
+if funding_risk > 0.4:
+    fixes.append("• **Funding links**: Create 3-4 new EOAs (externally owned accounts) on different exchanges. Fund each target wallet from a DIFFERENT source.")
+if temp_risk > 0.4:
+    fixes.append("• **Timing sync**: Use a random delay script. Spread 10 wallets across 6-8 hours, not 10 minutes.")
+if amt_risk > 0.3:
+    fixes.append("• **Amount repetition**: Randomize amounts. Instead of 0.01 ETH, use 0.007, 0.013, 0.009, 0.022.")
+if capital_risk > 0.5:
+    fixes.append("• **Tiny transactions**: Increase average tx value to >0.05 ETH. Small transactions are farming red flags.")
+if age_risk > 0.5:
+    fixes.append("• **New wallets**: Age your wallets for 30-90 days with light, random activity before major farms.")
+if contract_quality_risk > 0.4:
+    fixes.append("• **Low contract diversity**: Interact with 10+ unique protocols (Uniswap, Aave, Opensea, 1inch, Curve).")
+
+for fix in fixes[:5]:
+    st.markdown(fix)
+
+if not fixes:
+    st.success("No critical fixes needed – maintain current behavior but stay unpredictable.")
+
+# Risk summary for sharing
+st.subheader("📎 Shareable Risk Summary")
+st.code(f"""
+SYBIL RISK REPORT
+================
+Wallets analyzed: {len(addresses)}
+Overall risk: {overall*100:.0f}%
+Reputation score: {reputation_score*100:.0f}%
+
+Top risk factors:
+- Funding links: {funding_risk*100:.0f}%
+- Temporal sync: {temp_risk*100:.0f}%
+- Amount repetition: {amt_risk*100:.0f}%
+- Capital efficiency: {capital_risk*100:.0f}%
+
+Verdict: {"HIGH RISK - Do not use" if overall>0.6 else "MODERATE RISK - Fixable" if overall>0.3 else "LOW RISK - Safe"}
+""", language="text")
+
+st.caption("Recommendations based on observed filtering from LayerZero, zkSync, StarkWare, Scroll, Linea.")
             # Footer
             st.divider()
             st.caption("Based on observed sybil filtering criteria from LayerZero, zkSync, StarkWare, Scroll, and Linea.")
