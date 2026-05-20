@@ -111,25 +111,21 @@ if analyze_btn:
                 age_days = get_wallet_age_days(txs)
                 if age_days < 7:
                     risk = "🔴 CRITICAL"
-                    color = "error"
                 elif age_days < 30:
                     risk = "🟡 HIGH"
-                    color = "warning"
                 elif age_days < 90:
                     risk = "🟠 MEDIUM"
-                    color = "info"
                 else:
                     risk = "🟢 LOW"
-                    color = "success"
                 
                 wallet_results[addr]["age_days"] = age_days
                 wallet_results[addr]["age_risk"] = risk
                 
-                if color == "error":
+                if age_days < 7:
                     st.error(f"**{addr[:10]}...** → Age: {age_days} days | Risk: {risk}")
-                elif color == "warning":
+                elif age_days < 30:
                     st.warning(f"**{addr[:10]}...** → Age: {age_days} days | Risk: {risk}")
-                elif color == "info":
+                elif age_days < 90:
                     st.info(f"**{addr[:10]}...** → Age: {age_days} days | Risk: {risk}")
                 else:
                     st.success(f"**{addr[:10]}...** → Age: {age_days} days | Risk: {risk}")
@@ -392,4 +388,6 @@ if analyze_btn:
                     if revisits == 0:
                         st.warning(f"🟡 `{addr[:10]}...` → never revisits protocols (hit-and-run farming)")
                     elif revisits < 3:
-                        st.info(f
+                        st.info(f"ℹ️ `{addr[:10]}...` → revisits {revisits} protocol(s) (moderate retention)")
+                    else:
+                        st.success(f"🟢 `{addr[:10]}..
