@@ -51,6 +51,19 @@ def fetch_transactions(address, chain_id, api_key):
         pass
     return txs
 
+# Helper: Get wallet age in days
+def get_wallet_age_days(txs):
+    if not txs:
+        return 0
+    timestamps = [tx["timestamp"] for tx in txs if tx["timestamp"]]
+    if not timestamps:
+        return 0
+    try:
+        oldest = pd.to_datetime(min(timestamps))
+        return (pd.Timestamp.now() - oldest).days
+    except:
+        return 0
+
 # 1. Funding Patterns
 def analyze_funding(wallets_data):
     funder_count = Counter()
@@ -290,128 +303,136 @@ if analyze_btn:
                 }
                 st.dataframe(pd.DataFrame(criteria_data), use_container_width=True)
             
-            # Warnings
-            st.subheader("⚠️ Critical Risk Factors")
+            # === DETAILED RISK BREAKDOWN (SHOWS WHICH WALLETS) ===
+            st.subheader("⚠️ Detailed Risk Breakdown by Wallet")
+            
+            # 1. Funding Links – which wallets share funders
             if shared_funders:
-                st.warning(f"🔗 {len(shared_funders)} common funder(s) detected (Criterion #1)")
+                st.markdown("### 🔗 Funding Links (Criterion #1)")
+                for funder, count in list(shared_funders.items())[:5]:
+                    affected_wallets = []
+                    for addr, txs in all_data.items():
+                        for tx in txs:
+                            if tx["from"] == funder and tx["to"] == addr:
+                                affected_wallets.append(addr[:10] + "...")
+                                break
+                    st.warning(f"**Funder `{funder[:10]}...`** → funds {count} wallets: {', '.join(affected_wallets)}")
+            
+            # 2. Identical amounts – which wallets and what amounts
             if amt_repeated:
-                st.warning(f"💰 {len(amt_repeated)} identical amount(s) across wallets (Criterion #4)")
-            if age_risk > 0.6:
-                st.warning(f"📅 {len([a for a,r in age_details.items() if r>0.6])} wallets are new (<30 days old) (Criterion #3)")
-            if capital_risk > 0.6:
-                st.warning("💸 Tiny average transaction values suggest farming, not real usage (Criterion #7)")
+                st.markdown("### 💰 Identical Transaction Amounts (Criterion #4)")
+                for amount, count in list(amt_repeated.items())[:5]:
+                    wallets_with_amount = []
+                    for addr, txs in all_data.items():
+                        for tx in txs:
+                            if round(tx["value"], 4) == amount and addr[:10] not in str(wallets_with_amount):
+                                wallets_with_amount.append(addr[:10] + "...")
+                                break
+                    st.error(f"**{amount} ETH** → appears in {count} wallets: {', '.join(wallets_with_amount[:5])}")
+            
+            # 3. Wallet age – show each wallet's age
+            st.markdown("### 📅 Wallet Age & History (Criterion #3)")
+            age_table = []
+            for addr, txs in all_data.items():
+                if not txs:
+                    age_table.append({"Wallet": addr[:10] + "...", "Age (days)": 0, "Risk": "Critical"})
+                    continue
+                timestamps = [tx["timestamp"] for tx in txs if tx["timestamp"]]
+                if timestamps:
+                    oldest = pd.to_datetime(min(timestamps))
+                    age_days = (pd.Timestamp.now() - oldest).days
+                    if age_days < 7:
+                        risk_tag = "🔴 Critical"
+                    elif age_days < 30:
+                        risk_tag = "🟠 High"
+                    elif age_days < 90:
+                        risk_tag = "🟡 Medium"
+                    else:
+                        risk_tag = "🟢 Low"
+                    age_table.append({
+                        "Wallet": addr[:10] + "...",
+                        "Age (days)": age_days,
+                        "Risk": risk_tag
+                    })
+                else:
+                    age_table.append({"Wallet": addr[:10] + "...", "Age (days)": 0, "Risk": "Unknown"})
+            st.dataframe(pd.DataFrame(age_table), use_container_width=True)
+            
+            # 4. Tiny transactions – which wallets have them
+            if capital_risk > 0.4:
+                st.markdown("### 💸 Tiny Transaction Values (Criterion #7)")
+                tiny_table = []
+                for addr, txs in all_data.items():
+                    if txs:
+                        avg_value = sum(tx["value"] for tx in txs) / len(txs)
+                        if avg_value < 0.01:
+                            tiny_table.append({
+                                "Wallet": addr[:10] + "...",
+                                "Avg Tx Value": f"{avg_value:.4f} ETH",
+                                "Status": "🤖 Bot-like (tiny txs)"
+                            })
+                        elif avg_value < 0.05:
+                            tiny_table.append({
+                                "Wallet": addr[:10] + "...",
+                                "Avg Tx Value": f"{avg_value:.4f} ETH",
+                                "Status": "⚠️ Suspicious (small txs)"
+                            })
+                if tiny_table:
+                    st.dataframe(pd.DataFrame(tiny_table), use_container_width=True)
+                else:
+                    st.info("No wallets with suspiciously tiny transactions")
+            
+            # 5. Behavioral classification per wallet
+            st.markdown("### 🧠 Wallet Behavior Classification")
+            behavior_table = []
+            for addr, txs in all_data.items():
+                if not txs:
+                    behavior_table.append({"Wallet": addr[:10] + "...", "Behavior": "❓ Unknown", "Confidence": "Low", "Avg Tx": "N/A", "Unique Contracts": 0, "Total Tx": 0})
+                    continue
+                
+                avg_value = sum(tx["value"] for tx in txs) / len(txs)
+                unique_contracts = len(set(tx["to"] for tx in txs if tx["to"]))
+                tx_count = len(txs)
+                
+                if avg_value < 0.01 and unique_contracts < 5:
+                    behavior = "🤖 Bot / Sybil Farmer"
+                    confidence = "High"
+                elif avg_value < 0.05 or unique_contracts < 8:
+                    behavior = "⚠️ Suspicious / Light Farmer"
+                    confidence = "Medium"
+                else:
+                    behavior = "👤 Organic User"
+                    confidence = "High"
+                
+                behavior_table.append({
+                    "Wallet": addr[:10] + "...",
+                    "Behavior": behavior,
+                    "Confidence": confidence,
+                    "Avg Tx": f"{avg_value:.4f} ETH",
+                    "Unique Contracts": unique_contracts,
+                    "Total Tx": tx_count
+                })
+            st.dataframe(pd.DataFrame(behavior_table), use_container_width=True)
+            
+            # 6. Timing sync – which wallets act together
+            if temp_risk > 0.4:
+                st.markdown("### ⏱️ Temporal Synchronization (Criterion #2)")
+                st.warning("These wallets often transact within the same time windows:")
+                bucket_wallets = defaultdict(list)
+                for addr, txs in all_data.items():
+                    for tx in txs:
+                        if tx["timestamp"]:
+                            try:
+                                dt = pd.to_datetime(tx["timestamp"])
+                                bucket = dt.floor("1hour")
+                                bucket_wallets[bucket].append(addr[:10] + "...")
+                            except:
+                                pass
+                for bucket, wallets in list(bucket_wallets.items())[:3]:
+                    if len(set(wallets)) > 1:
+                        st.markdown(f"- **{bucket.strftime('%Y-%m-%d %H:%M')}** → {len(set(wallets))} wallets active: {', '.join(set(wallets)[:5])}")
             
             # What-if suggestions
             st.subheader("💡 Optimization Strategy (Based on 12 Criteria)")
             for s in suggestions:
-                st.markdown(s)
-            
-            # Reputation score explanation
-            st.info(f"📈 **Reputation Score**: {reputation_score*100:.0f}% - " +
-                   ("Good standing. Maintain natural behavior." if reputation_score > 0.6 else
-                    "Needs improvement. Focus on organic usage and wallet age."))
-            
-            # === ACTION PLAN SECTION ===
-            st.subheader("🎯 What To Do Next (Action Plan)")
-            
-            if overall > 0.6:
-                st.error("### 🚨 Your wallets are at HIGH risk of being filtered")
-                st.markdown("""
-                **Immediate actions recommended:**
-                
-                1. **Do NOT submit these wallets** to any airdrop that filters aggressively (LayerZero, zkSync, Scroll).
-                2. **Break funding links** – Move funds to new wallets from DIFFERENT sources (not the same master wallet).
-                3. **Add noise for 2-4 weeks** – Random transactions, different times, varied amounts.
-                4. **Consider retiring obvious clusters** – Some wallets may already be flagged.
-                """)
-                
-            elif overall > 0.3:
-                st.warning("### ⚠️ Your wallets show MODERATE risk – fixable")
-                st.markdown("""
-                **Recommended improvements:**
-                
-                1. **Vary transaction amounts** – Stop using fixed values like 0.01 ETH.
-                2. **Desync timing** – Space out activities across different hours/days.
-                3. **Add real usage** – Hold some tokens, interact with a new protocol.
-                4. **Wait 1-2 weeks** before submitting to filters.
-                """)
-                
-            else:
-                st.success("### ✅ Your wallets look ORGANIC – low risk")
-                st.markdown("""
-                **Maintain good habits:**
-                
-                1. Keep varying your behavior.
-                2. Avoid becoming predictable.
-                3. Continue using protocols naturally.
-                """)
-            
-            # Decision Matrix
-            st.subheader("📊 Should You Use These Wallets?")
-            
-            col_a, col_b, col_c = st.columns(3)
-            
-            with col_a:
-                st.markdown("**LayerZero / zkSync / Scroll**")
-                if overall > 0.5:
-                    st.error("❌ High risk of filtering")
-                elif overall > 0.3:
-                    st.warning("⚠️ Possible filtering")
-                else:
-                    st.success("✅ Likely safe")
-            
-            with col_b:
-                st.markdown("**Smaller / New Projects**")
-                if overall > 0.7:
-                    st.warning("⚠️ Moderate risk")
-                else:
-                    st.success("✅ Likely safe")
-            
-            with col_c:
-                st.markdown("**Open / Unfiltered Airdrops**")
-                st.success("✅ Probably safe for most")
-            
-            # Specific fixes by criterion
-            st.subheader("🔧 Specific Fixes for Your Detected Issues")
-            
-            fixes = []
-            if funding_risk > 0.4:
-                fixes.append("• **Funding links**: Create 3-4 new EOAs on different exchanges. Fund each target wallet from a DIFFERENT source.")
-            if temp_risk > 0.4:
-                fixes.append("• **Timing sync**: Use a random delay script. Spread 10 wallets across 6-8 hours, not 10 minutes.")
-            if amt_risk > 0.3:
-                fixes.append("• **Amount repetition**: Randomize amounts. Instead of 0.01 ETH, use 0.007, 0.013, 0.009, 0.022.")
-            if capital_risk > 0.5:
-                fixes.append("• **Tiny transactions**: Increase average tx value to >0.05 ETH. Small transactions are farming red flags.")
-            if age_risk > 0.5:
-                fixes.append("• **New wallets**: Age your wallets for 30-90 days with light, random activity before major farms.")
-            if contract_quality_risk > 0.4:
-                fixes.append("• **Low contract diversity**: Interact with 10+ unique protocols (Uniswap, Aave, Opensea, 1inch, Curve).")
-            
-            for fix in fixes[:5]:
-                st.markdown(fix)
-            
-            if not fixes:
-                st.success("No critical fixes needed – maintain current behavior but stay unpredictable.")
-            
-            # Risk summary for sharing
-            st.subheader("📎 Shareable Risk Summary")
-            st.code(f"""
-SYBIL RISK REPORT
-================
-Wallets analyzed: {len(addresses)}
-Overall risk: {overall*100:.0f}%
-Reputation score: {reputation_score*100:.0f}%
-
-Top risk factors:
-- Funding links: {funding_risk*100:.0f}%
-- Temporal sync: {temp_risk*100:.0f}%
-- Amount repetition: {amt_risk*100:.0f}%
-- Capital efficiency: {capital_risk*100:.0f}%
-
-Verdict: {"HIGH RISK - Do not use" if overall>0.6 else "MODERATE RISK - Fixable" if overall>0.3 else "LOW RISK - Safe"}
-""", language="text")
-            
-            # Footer
-            st.divider()
-            st.caption("Based on observed sybil filtering criteria from LayerZero, zkSync, StarkWare, Scroll, and Linea.")
+                s
