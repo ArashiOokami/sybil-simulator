@@ -71,13 +71,6 @@ def get_last_activity_days(txs):
     except:
         return 999
 
-def get_unique_protocols(txs):
-    protocols = set()
-    for tx in txs:
-        if tx["to"]:
-            protocols.add(tx["to"])
-    return len(protocols)
-
 def get_revisits(txs):
     protocol_counts = Counter([tx["to"] for tx in txs if tx["to"]])
     return sum(1 for count in protocol_counts.values() if count > 1)
@@ -97,7 +90,7 @@ if analyze_btn:
             st.success(f"✅ Data fetched for {len(all_data)} wallets")
             st.markdown("---")
             
-            # Store per-wallet results for final summary
+            # Store per-wallet results
             wallet_results = {addr: {} for addr in all_data.keys()}
             
             # =========================================================================
@@ -106,31 +99,18 @@ if analyze_btn:
             st.markdown("## 📅 1. Wallet Age & History")
             st.markdown("*Young wallets (<30 days) are high risk. Established wallets (>90 days) are low risk.*")
             
-            age_data = []
             for addr, txs in all_data.items():
                 age_days = get_wallet_age_days(txs)
-                if age_days < 7:
-                    risk = "🔴 CRITICAL"
-                elif age_days < 30:
-                    risk = "🟡 HIGH"
-                elif age_days < 90:
-                    risk = "🟠 MEDIUM"
-                else:
-                    risk = "🟢 LOW"
-                
                 wallet_results[addr]["age_days"] = age_days
-                wallet_results[addr]["age_risk"] = risk
                 
                 if age_days < 7:
-                    st.error(f"**{addr[:10]}...** → Age: {age_days} days | Risk: {risk}")
+                    st.error(f"**{addr[:10]}...** → Age: {age_days} days | Risk: 🔴 CRITICAL")
                 elif age_days < 30:
-                    st.warning(f"**{addr[:10]}...** → Age: {age_days} days | Risk: {risk}")
+                    st.warning(f"**{addr[:10]}...** → Age: {age_days} days | Risk: 🟡 HIGH")
                 elif age_days < 90:
-                    st.info(f"**{addr[:10]}...** → Age: {age_days} days | Risk: {risk}")
+                    st.info(f"**{addr[:10]}...** → Age: {age_days} days | Risk: 🟠 MEDIUM")
                 else:
-                    st.success(f"**{addr[:10]}...** → Age: {age_days} days | Risk: {risk}")
-                
-                age_data.append({"wallet": addr[:10], "age_days": age_days, "risk": risk})
+                    st.success(f"**{addr[:10]}...** → Age: {age_days} days | Risk: 🟢 LOW")
             
             # =========================================================================
             # CRITERION 2: FUNDING GRAPH
@@ -253,12 +233,11 @@ if analyze_btn:
                 gas_values = [g["avg_gas"] for g in gas_data]
                 gas_std = pd.Series(gas_values).std()
                 if gas_std < 3:
-                    st.error(f"🔴 **CRITICAL:** Gas prices nearly identical across all wallets (std dev: {gas_std:.2f})")
-                    st.error("This strongly suggests all wallets use the same bot/automation settings.")
+                    st.error(f"🔴 **CRITICAL:** Gas prices nearly identical across wallets (std dev: {gas_std:.2f})")
                 elif gas_std < 10:
                     st.warning(f"🟡 **WARNING:** Moderately consistent gas prices (std dev: {gas_std:.2f})")
                 else:
-                    st.success(f"🟢 Gas prices show natural variation (std dev: {gas_std:.2f}) — looks human")
+                    st.success(f"🟢 Gas prices show natural variation (std dev: {gas_std:.2f})")
                 
                 st.markdown("**Per-wallet average gas price (Gwei):**")
                 for g in gas_data:
@@ -349,7 +328,7 @@ if analyze_btn:
                     else:
                         st.info(f"ℹ️ `{addr[:10]}...` → {unique_ratios*100:.1f}% unique values (average)")
                 else:
-                    wallet_results[addr]["value_diversity"] = "N/A (insufficient data)"
+                    wallet_results[addr]["value_diversity"] = "N/A"
                     st.info(f"ℹ️ `{addr[:10]}...` → insufficient transactions for diversity analysis")
             
             # =========================================================================
@@ -390,4 +369,17 @@ if analyze_btn:
                     elif revisits < 3:
                         st.info(f"ℹ️ `{addr[:10]}...` → revisits {revisits} protocol(s) (moderate retention)")
                     else:
-                        st.success(f"🟢 `{addr[:10]}..
+                        st.success(f"🟢 `{addr[:10]}...` → revisits {revisits} protocol(s) (good retention — organic)")
+                else:
+                    st.info(f"ℹ️ `{addr[:10]}...` → insufficient data for retention analysis")
+            
+            # =========================================================================
+            # CRITERION 11: LOW-VALUE SPAM DETECTION
+            # =========================================================================
+            st.markdown("---")
+            st.markdown("## 🧹 11. Low-Value Spam Detection")
+            st.markdown("*High percentage of micro-transactions (<0.001 ETH) indicates spam/farming behavior.*")
+            
+            for addr, txs in all_data.items():
+                small_txs = sum(1 for tx in txs if tx["value"] < 0.001 and tx["value"] > 0)
+            
