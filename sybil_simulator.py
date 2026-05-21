@@ -22,7 +22,7 @@ with col1:
 with col2:
     # ⚠️ WARNING: Hardcoded API key is insecure – replace with your actual key below
     # Replace "YOUR_API_KEY_HERE" with your real Etherscan API key (keep the quotes)
-    api_key = "YOUR_API_KEY_HERE"   # <--- PASTE YOUR REAL KEY INSIDE THE QUOTES
+    api_key = "KETM4FEPYYJT7DF6GZMBE83JX677DDYZXB"   # <--- PASTE YOUR REAL KEY INSIDE THE QUOTES
     analyze_btn = st.button("Run Complete Analysis", type="primary")
 
 # ============================================================================
