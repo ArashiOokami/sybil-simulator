@@ -19,7 +19,7 @@ with col1:
     wallet_input = st.text_area("Wallet addresses (one per line)", height=200)
 with col2:
     # No input box for API key - using hardcoded (not recommended!)
-    api_key = "YOUR_API_KEY_HERE"   # <--- PASTE YOUR ACTUAL KEY HERE
+    api_key = "KETM4FEPYYJT7DF6GZMBE83JX677DDYZXB"   # <--- PASTE YOUR ACTUAL KEY HERE
     analyze_btn = st.button("Run Complete Analysis", type="primary")
 
 @st.cache_data(ttl=3600)
