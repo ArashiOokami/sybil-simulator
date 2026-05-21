@@ -9,7 +9,9 @@ st.set_page_config(page_title="Sybil Simulator - 15 Factors", layout="wide")
 st.title("🛡️ Sybil Resistance Simulator")
 st.markdown("**Complete 15-factor analysis — Every wallet shown individually with full details**")
 
-# Inputs
+# ============================================================================
+# CONFIGURATION
+# ============================================================================
 st.subheader("Configuration")
 col1, col2 = st.columns(2)
 with col1:
@@ -18,13 +20,17 @@ with col1:
     chain_id = chain_map[chain]
     wallet_input = st.text_area("Wallet addresses (one per line)", height=200)
 with col2:
-    # No input box for API key - using hardcoded (not recommended!)
-    api_key = "KETM4FEPYYJT7DF6GZMBE83JX677DDYZXB"   # <--- PASTE YOUR ACTUAL KEY HERE
+    # ⚠️ WARNING: Hardcoded API key is insecure – replace with your actual key below
+    # Replace "YOUR_API_KEY_HERE" with your real Etherscan API key (keep the quotes)
+    api_key = "YOUR_API_KEY_HERE"   # <--- PASTE YOUR REAL KEY INSIDE THE QUOTES
     analyze_btn = st.button("Run Complete Analysis", type="primary")
 
+# ============================================================================
+# DATA FETCHING (Etherscan V2 API)
+# ============================================================================
 @st.cache_data(ttl=3600)
 def fetch_transactions(address, chain_id, api_key):
-    """Fetch last 1000 transactions from Etherscan V2 API"""
+    """Fetch last 1000 transactions from Etherscan V2 API (limits to 200 for speed)"""
     if not api_key:
         return []
     url = "https://api.etherscan.io/v2/api"
@@ -56,12 +62,16 @@ def fetch_transactions(address, chain_id, api_key):
                 "gas_limit": float(item.get("gas", 0)),
                 "tx_hash": item.get("hash")
             })
-        time.sleep(0.35)
+        time.sleep(0.35)  # respect Etherscan rate limit (3 calls/sec)
         return txs
     except:
         return []
 
+# ============================================================================
+# HELPER FUNCTIONS
+# ============================================================================
 def get_wallet_age_days(txs):
+    """Calculate wallet age based on oldest transaction timestamp (Unix seconds)"""
     if not txs:
         return 0
     timestamps = [tx["timestamp"] for tx in txs if tx["timestamp"]]
@@ -72,6 +82,7 @@ def get_wallet_age_days(txs):
     return (pd.Timestamp.now() - oldest).days
 
 def get_last_activity_days(txs):
+    """Days since last transaction"""
     if not txs:
         return 999
     timestamps = [tx["timestamp"] for tx in txs if tx["timestamp"]]
@@ -82,80 +93,66 @@ def get_last_activity_days(txs):
     return (pd.Timestamp.now() - newest).days
 
 def get_revisits(txs):
+    """Count how many protocols (unique 'to' addresses) have been visited more than once"""
     protocol_counts = Counter([tx["to"] for tx in txs if tx["to"]])
     return sum(1 for count in protocol_counts.values() if count > 1)
 
+# ============================================================================
+# MAIN ANALYSIS
+# ============================================================================
 if analyze_btn:
     addresses = [w.strip() for w in wallet_input.split("\n") if w.strip()]
     if len(addresses) < 2:
         st.error("Enter at least 2 wallet addresses")
-    elif not api_key:
-        st.error("Enter your Etherscan API key")
+    elif not api_key or api_key == "YOUR_API_KEY_HERE":
+        st.error("Please replace 'YOUR_API_KEY_HERE' with your actual Etherscan API key")
     else:
         with st.spinner(f"Analyzing {len(addresses)} wallets with 15 detection factors..."):
             all_data = {}
             for addr in addresses[:10]:
                 all_data[addr] = fetch_transactions(addr, chain_id, api_key)
-            
+
             st.success(f"✅ Data fetched for {len(all_data)} wallets")
             st.markdown("---")
-            
+
             # Store per-wallet results
             wallet_results = {addr: {} for addr in all_data.keys()}
-            
-            # =========================================================================
-# CRITERION 1: WALLET AGE
-# =========================================================================
-st.markdown("## 📅 1. Wallet Age & History")
-st.markdown("*Young wallets (<30 days) are high risk. Established wallets (>90 days) are low risk.*")
 
-for addr, txs in all_data.items():
-    age_days = get_wallet_age_days(txs)
-    total_tx = len(txs)
-    wallet_results[addr]["age_days"] = age_days
-    wallet_results[addr]["total_tx"] = total_tx
-    
-    if age_days < 7:
-        st.error(f"**{addr[:10]}...** → Age: {age_days} days | Total Tx: {total_tx} | Risk: 🔴 CRITICAL")
-    elif age_days < 30:
-        st.warning(f"**{addr[:10]}...** → Age: {age_days} days | Total Tx: {total_tx} | Risk: 🟡 HIGH")
-    elif age_days < 90:
-        st.info(f"**{addr[:10]}...** → Age: {age_days} days | Total Tx: {total_tx} | Risk: 🟠 MEDIUM")
-    else:
-        st.success(f"**{addr[:10]}...** → Age: {age_days} days | Total Tx: {total_tx} | Risk: 🟢 LOW")
-            # =========================================================================
-            # CRITERION 2: FUNDING GRAPH
-            # =========================================================================
+            # =================================================================
+            # CRITERION 1: WALLET AGE & HISTORY (with total transaction count)
+            # =================================================================
+            st.markdown("## 📅 1. Wallet Age & History")
+            st.markdown("*Young wallets (<30 days) are high risk. Established wallets (>90 days) are low risk.*")
+
+            for addr, txs in all_data.items():
+                age_days = get_wallet_age_days(txs)
+                total_tx = len(txs)
+                wallet_results[addr]["age_days"] = age_days
+                wallet_results[addr]["total_tx"] = total_tx
+
+                if age_days < 7:
+                    st.error(f"**{addr[:10]}...** → Age: {age_days} days | Total Tx: {total_tx} | Risk: 🔴 CRITICAL")
+                elif age_days < 30:
+                    st.warning(f"**{addr[:10]}...** → Age: {age_days} days | Total Tx: {total_tx} | Risk: 🟡 HIGH")
+                elif age_days < 90:
+                    st.info(f"**{addr[:10]}...** → Age: {age_days} days | Total Tx: {total_tx} | Risk: 🟠 MEDIUM")
+                else:
+                    st.success(f"**{addr[:10]}...** → Age: {age_days} days | Total Tx: {total_tx} | Risk: 🟢 LOW")
+
+            # =================================================================
+            # CRITERION 2: FUNDING GRAPH (Shared Sources)
+            # =================================================================
             st.markdown("---")
             st.markdown("## 🔗 2. Funding Graph (Shared Sources)")
             st.markdown("*Wallets funded by the same source indicate operator clustering.*")
-            
+
             funder_to_wallets = defaultdict(list)
             for addr, txs in all_data.items():
                 for tx in txs:
                     if tx["to"] == addr and tx["value"] > 0.001:
                         funder_to_wallets[tx["from"]].append(addr)
-            
-            # =========================================================================
-            # CRITERION 1: WALLET AGE
-            # =========================================================================
-            st.markdown("## 📅 1. Wallet Age & History")
-            st.markdown("*Young wallets (<30 days) are high risk. Established wallets (>90 days) are low risk.*")
-            
-            for addr, txs in all_data.items():
-    age_days = get_wallet_age_days(txs)
-    total_tx = len(txs)
-    wallet_results[addr]["age_days"] = age_days
-    wallet_results[addr]["total_tx"] = total_tx
-    
-    if age_days < 7:
-        st.error(f"**{addr[:10]}...** → Age: {age_days} days | Total Tx: {total_tx} | Risk: 🔴 CRITICAL")
-    elif age_days < 30:
-        st.warning(f"**{addr[:10]}...** → Age: {age_days} days | Total Tx: {total_tx} | Risk: 🟡 HIGH")
-    elif age_days < 90:
-        st.info(f"**{addr[:10]}...** → Age: {age_days} days | Total Tx: {total_tx} | Risk: 🟠 MEDIUM")
-    else:
-        st.success(f"**{addr[:10]}...** → Age: {age_days} days | Total Tx: {total_tx} | Risk: 🟢 LOW")if funder_to_wallets:
+
+            if funder_to_wallets:
                 for funder, wallets in funder_to_wallets.items():
                     unique_wallets = list(set(wallets))
                     wallet_shorts = [w[:10] + "..." for w in unique_wallets]
@@ -163,7 +160,7 @@ for addr, txs in all_data.items():
                         st.error(f"🔴 **Funder:** `{funder[:10]}...` → Funds {len(unique_wallets)} wallets: {', '.join(wallet_shorts)}")
                     else:
                         st.warning(f"🟡 **Funder:** `{funder[:10]}...` → Funds {len(unique_wallets)} wallets: {', '.join(wallet_shorts)}")
-                    
+
                     for wallet in unique_wallets:
                         if "funders" not in wallet_results[wallet]:
                             wallet_results[wallet]["funders"] = []
@@ -172,14 +169,14 @@ for addr, txs in all_data.items():
                 st.info("No shared funding sources detected.")
                 for addr in all_data.keys():
                     wallet_results[addr]["funders"] = []
-            
-            # =========================================================================
-            # CRITERION 3: TEMPORAL PATTERN SYNC
-            # =========================================================================
+
+            # =================================================================
+            # CRITERION 3: TEMPORAL PATTERN SYNCHRONIZATION
+            # =================================================================
             st.markdown("---")
             st.markdown("## ⏱️ 3. Temporal Pattern Synchronization")
             st.markdown("*Wallets that interact at the exact same time suggest automation.*")
-            
+
             time_buckets = defaultdict(list)
             for addr, txs in all_data.items():
                 for tx in txs:
@@ -190,7 +187,7 @@ for addr, txs in all_data.items():
                             time_buckets[bucket].append(addr)
                         except:
                             pass
-            
+
             sync_found = False
             for bucket, wallets in sorted(time_buckets.items()):
                 unique_wallets = list(set(wallets))
@@ -201,29 +198,29 @@ for addr, txs in all_data.items():
                         st.error(f"🔴 **{bucket.strftime('%Y-%m-%d %H:%M')}** → {len(unique_wallets)} wallets: {', '.join(wallet_shorts)}")
                     else:
                         st.warning(f"🟡 **{bucket.strftime('%Y-%m-%d %H:%M')}** → {len(unique_wallets)} wallets: {', '.join(wallet_shorts)}")
-                    
+
                     for wallet in unique_wallets:
                         if "sync_hours" not in wallet_results[wallet]:
                             wallet_results[wallet]["sync_hours"] = []
                         wallet_results[wallet]["sync_hours"].append(bucket.strftime('%Y-%m-%d %H:%M'))
-            
+
             if not sync_found:
                 st.info("No synchronized activity detected across wallets.")
-            
-            # =========================================================================
-            # CRITERION 4: IDENTICAL AMOUNTS
-            # =========================================================================
+
+            # =================================================================
+            # CRITERION 4: IDENTICAL TRANSACTION AMOUNTS
+            # =================================================================
             st.markdown("---")
             st.markdown("## 💰 4. Identical Transaction Amounts")
             st.markdown("*Repeated identical amounts across wallets indicate scripted behavior.*")
-            
+
             amount_to_wallets = defaultdict(set)
             for addr, txs in all_data.items():
                 for tx in txs:
                     amt = round(tx["value"], 4)
                     if 0.0001 < amt < 100:
                         amount_to_wallets[amt].add(addr)
-            
+
             identical_found = False
             for amt, wallets in amount_to_wallets.items():
                 if len(wallets) > 1:
@@ -233,22 +230,22 @@ for addr, txs in all_data.items():
                         st.error(f"🔴 **{amt} ETH** → {len(wallets)} wallets: {', '.join(wallet_shorts)}")
                     else:
                         st.warning(f"🟡 **{amt} ETH** → {len(wallets)} wallets: {', '.join(wallet_shorts)}")
-                    
+
                     for wallet in wallets:
                         if "identical_amounts" not in wallet_results[wallet]:
                             wallet_results[wallet]["identical_amounts"] = []
                         wallet_results[wallet]["identical_amounts"].append(amt)
-            
+
             if not identical_found:
                 st.info("No identical transaction amounts detected across wallets.")
-            
-            # =========================================================================
+
+            # =================================================================
             # CRITERION 5: GAS PRICE CONSISTENCY
-            # =========================================================================
+            # =================================================================
             st.markdown("---")
             st.markdown("## ⛽ 5. Gas Price Consistency")
             st.markdown("*Identical gas prices across wallets strongly indicates bot automation.*")
-            
+
             gas_data = []
             for addr, txs in all_data.items():
                 gas_prices = [tx["gas_price"] for tx in txs if tx["gas_price"] > 0]
@@ -258,7 +255,7 @@ for addr, txs in all_data.items():
                     wallet_results[addr]["avg_gas"] = round(avg_gas, 2)
                 else:
                     wallet_results[addr]["avg_gas"] = None
-            
+
             if len(gas_data) > 1:
                 gas_values = [g["avg_gas"] for g in gas_data]
                 gas_std = pd.Series(gas_values).std()
@@ -268,26 +265,26 @@ for addr, txs in all_data.items():
                     st.warning(f"🟡 **WARNING:** Moderately consistent gas prices (std dev: {gas_std:.2f})")
                 else:
                     st.success(f"🟢 Gas prices show natural variation (std dev: {gas_std:.2f})")
-                
+
                 st.markdown("**Per-wallet average gas price (Gwei):**")
                 for g in gas_data:
                     st.write(f"  • `{g['wallet'][:10]}...`: {g['avg_gas']:.2f} Gwei")
             else:
                 st.info("Insufficient gas data for comparison.")
-            
-            # =========================================================================
-            # CRITERION 6: WITHDRAWAL CLUSTERING
-            # =========================================================================
+
+            # =================================================================
+            # CRITERION 6: WITHDRAWAL DESTINATION CLUSTERING
+            # =================================================================
             st.markdown("---")
             st.markdown("## 🏦 6. Withdrawal Destination Clustering")
             st.markdown("*Multiple wallets sending funds to the same destination indicates operator control.*")
-            
+
             destinations = defaultdict(set)
             for addr, txs in all_data.items():
                 for tx in txs:
                     if tx["from"] == addr and tx["value"] > 0.01:
                         destinations[tx["to"]].add(addr)
-            
+
             cluster_found = False
             for dest, wallets in destinations.items():
                 if len(wallets) > 1:
@@ -297,22 +294,22 @@ for addr, txs in all_data.items():
                         st.error(f"🔴 **Destination:** `{dest[:10]}...` → {len(wallets)} wallets send funds here: {', '.join(wallet_shorts)}")
                     else:
                         st.warning(f"🟡 **Destination:** `{dest[:10]}...` → {len(wallets)} wallets: {', '.join(wallet_shorts)}")
-                    
+
                     for wallet in wallets:
                         if "destinations" not in wallet_results[wallet]:
                             wallet_results[wallet]["destinations"] = []
                         wallet_results[wallet]["destinations"].append(dest[:10])
-            
+
             if not cluster_found:
                 st.info("No shared withdrawal destinations detected — good independence.")
-            
-            # =========================================================================
+
+            # =================================================================
             # CRITERION 7: PROTOCOL SEQUENCE MATCHING
-            # =========================================================================
+            # =================================================================
             st.markdown("---")
             st.markdown("## 🔄 7. Protocol Interaction Sequence")
             st.markdown("*Wallets that interact with the same protocols in the same order suggest scripted behavior.*")
-            
+
             sequences = {}
             for addr, txs in all_data.items():
                 protocols = []
@@ -320,32 +317,32 @@ for addr, txs in all_data.items():
                     if tx["to"]:
                         protocols.append(tx["to"][:20])
                 sequences[addr] = protocols
-            
+
             matching_pairs = []
             addr_list = list(sequences.keys())
             for i in range(len(addr_list)):
-                for j in range(i+1, len(addr_list)):
+                for j in range(i + 1, len(addr_list)):
                     seq1 = sequences[addr_list[i]]
                     seq2 = sequences[addr_list[j]]
                     if len(seq1) > 5 and len(seq2) > 5:
                         common = len(set(seq1[:10]) & set(seq2[:10]))
                         if common > 6:
                             matching_pairs.append((addr_list[i], addr_list[j], common))
-            
+
             if matching_pairs:
                 st.warning(f"🟡 Found {len(matching_pairs)} wallet pair(s) with highly similar protocol sequences:")
                 for w1, w2, common in matching_pairs[:5]:
                     st.write(f"  • `{w1[:10]}...` ↔ `{w2[:10]}...` → {common}/10 protocols match")
             else:
                 st.success("🟢 No matching protocol sequences detected — diverse behavior.")
-            
-            # =========================================================================
+
+            # =================================================================
             # CRITERION 8: TRANSACTION VALUE DIVERSITY
-            # =========================================================================
+            # =================================================================
             st.markdown("---")
             st.markdown("## 📊 8. Transaction Value Diversity")
             st.markdown("*Repetitive transaction amounts indicate farming. Natural variation indicates humans.*")
-            
+
             for addr, txs in all_data.items():
                 values = [tx["value"] for tx in txs if tx["value"] > 0.0001]
                 if len(values) > 5:
@@ -360,14 +357,14 @@ for addr, txs in all_data.items():
                 else:
                     wallet_results[addr]["value_diversity"] = "N/A"
                     st.info(f"ℹ️ `{addr[:10]}...` → insufficient transactions for diversity analysis")
-            
-            # =========================================================================
-            # CRITERION 9: INTERACTION DEPTH
-            # =========================================================================
+
+            # =================================================================
+            # CRITERION 9: INTERACTION DEPTH PER PROTOCOL
+            # =================================================================
             st.markdown("---")
             st.markdown("## 🎯 9. Interaction Depth Per Protocol")
             st.markdown("*Shallow engagement (1-2 tx/protocol) suggests farming. Deep engagement suggests organic use.*")
-            
+
             for addr, txs in all_data.items():
                 protocol_counts = Counter([tx["to"] for tx in txs if tx["to"]])
                 if protocol_counts:
@@ -382,14 +379,14 @@ for addr, txs in all_data.items():
                 else:
                     wallet_results[addr]["avg_depth"] = 0
                     st.info(f"ℹ️ `{addr[:10]}...` → no protocol interactions detected")
-            
-            # =========================================================================
-            # CRITERION 10: RETENTION BEHAVIOR
-            # =========================================================================
+
+            # =================================================================
+            # CRITERION 10: RETENTION & REVISIT BEHAVIOR
+            # =================================================================
             st.markdown("---")
             st.markdown("## 🔁 10. Retention & Revisit Behavior")
             st.markdown("*Wallets that return to protocols show organic behavior. One-time visits suggest extraction.*")
-            
+
             for addr, txs in all_data.items():
                 revisits = get_revisits(txs)
                 wallet_results[addr]["revisits"] = revisits
@@ -402,14 +399,14 @@ for addr, txs in all_data.items():
                         st.success(f"🟢 `{addr[:10]}...` → revisits {revisits} protocol(s) (good retention — organic)")
                 else:
                     st.info(f"ℹ️ `{addr[:10]}...` → insufficient data for retention analysis")
-            
-            # =========================================================================
+
+            # =================================================================
             # CRITERION 11: LOW-VALUE SPAM DETECTION
-            # =========================================================================
+            # =================================================================
             st.markdown("---")
             st.markdown("## 🧹 11. Low-Value Spam Detection")
             st.markdown("*High percentage of micro-transactions (<0.001 ETH) indicates spam/farming behavior.*")
-            
+
             for addr, txs in all_data.items():
                 small_txs = sum(1 for tx in txs if tx["value"] < 0.001 and tx["value"] > 0)
                 if len(txs) > 0:
@@ -423,18 +420,19 @@ for addr, txs in all_data.items():
                         st.success(f"🟢 `{addr[:10]}...` → {small_ratio:.1f}% micro-txs (healthy)")
                 else:
                     st.info(f"ℹ️ `{addr[:10]}...` → no transactions")
-            
-            # =========================================================================
+
+            # =================================================================
             # FINAL RISK SUMMARY TABLE
-            # =========================================================================
+            # =================================================================
             st.markdown("---")
             st.markdown("## 📋 Final Risk Summary Per Wallet")
-            
+
             summary_data = []
             for addr in all_data.keys():
                 summary_data.append({
                     "Wallet": addr[:10] + "...",
                     "Age (days)": wallet_results[addr].get("age_days", "N/A"),
+                    "Total Tx": wallet_results[addr].get("total_tx", "N/A"),
                     "Shared Funders": len(wallet_results[addr].get("funders", [])),
                     "Sync Hours": len(wallet_results[addr].get("sync_hours", [])),
                     "Identical Amounts": len(wallet_results[addr].get("identical_amounts", [])),
@@ -445,6 +443,6 @@ for addr, txs in all_data.items():
                     "Revisits": wallet_results[addr].get("revisits", 0),
                     "Spam Ratio (%)": wallet_results[addr].get("spam_ratio", "N/A")
                 })
-            
+
             df = pd.DataFrame(summary_data)
             st.dataframe(df, use_container_width=True)
