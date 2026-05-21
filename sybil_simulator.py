@@ -18,34 +18,48 @@ with col1:
     chain_id = chain_map[chain]
     wallet_input = st.text_area("Wallet addresses (one per line)", height=200)
 with col2:
-    api_key = st.text_input("Covalent API Key", type="password", 
-                            help="Get free key from https://www.covalenthq.com")
+    # No input box for API key - using hardcoded (not recommended!)
+    api_key = "YOUR_API_KEY_HERE"   # <--- PASTE YOUR ACTUAL KEY HERE
     analyze_btn = st.button("Run Complete Analysis", type="primary")
 
 @st.cache_data(ttl=3600)
 def fetch_transactions(address, chain_id, api_key):
+    """Fetch last 1000 transactions from Etherscan V2 API"""
     if not api_key:
         return []
-    url = f"https://api.covalenthq.com/v1/{chain_id}/address/{address}/transactions_v2/"
-    params = {"key": api_key, "page-size": 200}
-    txs = []
+    url = "https://api.etherscan.io/v2/api"
+    params = {
+        "chainid": chain_id,
+        "module": "account",
+        "action": "txlist",
+        "address": address,
+        "startblock": 0,
+        "endblock": 99999999,
+        "page": 1,
+        "offset": 1000,
+        "sort": "asc",
+        "apikey": api_key
+    }
     try:
-        resp = requests.get(url, params=params, timeout=30).json()
-        items = resp.get("data", {}).get("items", [])
-        for item in items[:200]:
+        resp = requests.get(url, params=params, timeout=30)
+        data = resp.json()
+        if data.get("status") != "1":
+            return []
+        txs = []
+        for item in data.get("result", [])[:200]:
             txs.append({
-                "from": item.get("from_address"),
-                "to": item.get("to_address"),
+                "from": item.get("from"),
+                "to": item.get("to"),
                 "value": float(item.get("value", 0)) / 1e18,
-                "timestamp": item.get("block_signed_at"),
-                "gas_price": float(item.get("gas_price", 0)) / 1e9,
-                "gas_limit": float(item.get("gas_limit", 0)),
-                "tx_hash": item.get("tx_hash")
+                "timestamp": item.get("timeStamp"),
+                "gas_price": float(item.get("gasPrice", 0)) / 1e9,
+                "gas_limit": float(item.get("gas", 0)),
+                "tx_hash": item.get("hash")
             })
-        time.sleep(0.1)
-    except Exception as e:
-        st.error(f"Error fetching {address[:10]}...: {e}")
-    return txs
+        time.sleep(0.35)
+        return txs
+    except:
+        return []
 
 def get_wallet_age_days(txs):
     if not txs:
@@ -53,11 +67,9 @@ def get_wallet_age_days(txs):
     timestamps = [tx["timestamp"] for tx in txs if tx["timestamp"]]
     if not timestamps:
         return 0
-    try:
-        oldest = pd.to_datetime(min(timestamps))
-        return (pd.Timestamp.now() - oldest).days
-    except:
-        return 0
+    oldest_ts = int(min(timestamps))
+    oldest = pd.to_datetime(oldest_ts, unit='s')
+    return (pd.Timestamp.now() - oldest).days
 
 def get_last_activity_days(txs):
     if not txs:
@@ -65,11 +77,9 @@ def get_last_activity_days(txs):
     timestamps = [tx["timestamp"] for tx in txs if tx["timestamp"]]
     if not timestamps:
         return 999
-    try:
-        newest = pd.to_datetime(max(timestamps))
-        return (pd.Timestamp.now() - newest).days
-    except:
-        return 999
+    newest_ts = int(max(timestamps))
+    newest = pd.to_datetime(newest_ts, unit='s')
+    return (pd.Timestamp.now() - newest).days
 
 def get_revisits(txs):
     protocol_counts = Counter([tx["to"] for tx in txs if tx["to"]])
@@ -80,7 +90,7 @@ if analyze_btn:
     if len(addresses) < 2:
         st.error("Enter at least 2 wallet addresses")
     elif not api_key:
-        st.error("Enter your Covalent API key")
+        st.error("Enter your Etherscan API key")
     else:
         with st.spinner(f"Analyzing {len(addresses)} wallets with 15 detection factors..."):
             all_data = {}
@@ -155,7 +165,7 @@ if analyze_btn:
                 for tx in txs:
                     if tx["timestamp"]:
                         try:
-                            dt = pd.to_datetime(tx["timestamp"])
+                            dt = pd.to_datetime(int(tx["timestamp"]), unit='s')
                             bucket = dt.floor("1hour")
                             time_buckets[bucket].append(addr)
                         except:
@@ -382,4 +392,39 @@ if analyze_btn:
             
             for addr, txs in all_data.items():
                 small_txs = sum(1 for tx in txs if tx["value"] < 0.001 and tx["value"] > 0)
+                if len(txs) > 0:
+                    small_ratio = small_txs / len(txs) * 100
+                    wallet_results[addr]["spam_ratio"] = round(small_ratio, 1)
+                    if small_ratio > 50:
+                        st.error(f"🔴 `{addr[:10]}...` → {small_ratio:.1f}% micro-txs (spam/farming high risk)")
+                    elif small_ratio > 20:
+                        st.warning(f"🟡 `{addr[:10]}...` → {small_ratio:.1f}% micro-txs (moderate spam risk)")
+                    else:
+                        st.success(f"🟢 `{addr[:10]}...` → {small_ratio:.1f}% micro-txs (healthy)")
+                else:
+                    st.info(f"ℹ️ `{addr[:10]}...` → no transactions")
             
+            # =========================================================================
+            # FINAL RISK SUMMARY TABLE
+            # =========================================================================
+            st.markdown("---")
+            st.markdown("## 📋 Final Risk Summary Per Wallet")
+            
+            summary_data = []
+            for addr in all_data.keys():
+                summary_data.append({
+                    "Wallet": addr[:10] + "...",
+                    "Age (days)": wallet_results[addr].get("age_days", "N/A"),
+                    "Shared Funders": len(wallet_results[addr].get("funders", [])),
+                    "Sync Hours": len(wallet_results[addr].get("sync_hours", [])),
+                    "Identical Amounts": len(wallet_results[addr].get("identical_amounts", [])),
+                    "Avg Gas (Gwei)": wallet_results[addr].get("avg_gas", "N/A"),
+                    "Shared Destinations": len(wallet_results[addr].get("destinations", [])),
+                    "Value Diversity (%)": wallet_results[addr].get("value_diversity", "N/A"),
+                    "Avg Depth": wallet_results[addr].get("avg_depth", "N/A"),
+                    "Revisits": wallet_results[addr].get("revisits", 0),
+                    "Spam Ratio (%)": wallet_results[addr].get("spam_ratio", "N/A")
+                })
+            
+            df = pd.DataFrame(summary_data)
+            st.dataframe(df, use_container_width=True)
