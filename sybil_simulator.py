@@ -110,17 +110,19 @@ if analyze_btn:
             st.markdown("*Young wallets (<30 days) are high risk. Established wallets (>90 days) are low risk.*")
             
             for addr, txs in all_data.items():
-                age_days = get_wallet_age_days(txs)
-                wallet_results[addr]["age_days"] = age_days
-                
-                if age_days < 7:
-                    st.error(f"**{addr[:10]}...** → Age: {age_days} days | Risk: 🔴 CRITICAL")
-                elif age_days < 30:
-                    st.warning(f"**{addr[:10]}...** → Age: {age_days} days | Risk: 🟡 HIGH")
-                elif age_days < 90:
-                    st.info(f"**{addr[:10]}...** → Age: {age_days} days | Risk: 🟠 MEDIUM")
-                else:
-                    st.success(f"**{addr[:10]}...** → Age: {age_days} days | Risk: 🟢 LOW")
+    age_days = get_wallet_age_days(txs)
+    total_tx = len(txs)   # <--- total number of transactions
+    wallet_results[addr]["age_days"] = age_days
+    wallet_results[addr]["total_tx"] = total_tx
+    
+    if age_days < 7:
+        st.error(f"**{addr[:10]}...** → Age: {age_days} days | Total Tx: {total_tx} | Risk: 🔴 CRITICAL")
+    elif age_days < 30:
+        st.warning(f"**{addr[:10]}...** → Age: {age_days} days | Total Tx: {total_tx} | Risk: 🟡 HIGH")
+    elif age_days < 90:
+        st.info(f"**{addr[:10]}...** → Age: {age_days} days | Total Tx: {total_tx} | Risk: 🟠 MEDIUM")
+    else:
+        st.success(f"**{addr[:10]}...** → Age: {age_days} days | Total Tx: {total_tx} | Risk: 🟢 LOW")
             
             # =========================================================================
             # CRITERION 2: FUNDING GRAPH
