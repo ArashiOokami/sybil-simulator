@@ -111,7 +111,7 @@ if analyze_btn:
             
             for addr, txs in all_data.items():
     age_days = get_wallet_age_days(txs)
-    total_tx = len(txs)   # <--- total number of transactions
+    total_tx = len(txs)
     wallet_results[addr]["age_days"] = age_days
     wallet_results[addr]["total_tx"] = total_tx
     
@@ -123,7 +123,6 @@ if analyze_btn:
         st.info(f"**{addr[:10]}...** → Age: {age_days} days | Total Tx: {total_tx} | Risk: 🟠 MEDIUM")
     else:
         st.success(f"**{addr[:10]}...** → Age: {age_days} days | Total Tx: {total_tx} | Risk: 🟢 LOW")
-            
             # =========================================================================
             # CRITERION 2: FUNDING GRAPH
             # =========================================================================
